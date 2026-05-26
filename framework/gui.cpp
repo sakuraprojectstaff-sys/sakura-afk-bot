@@ -208,8 +208,9 @@ void c_gui::render()
                             elements->game_card.fps_count[1] = std::to_string(rt.accounts.size()) + " bound";
                             elements->game_card.fps_count[2] = std::to_string(rt.windows.size()) + " found";
                             elements->game_card.royale_count[0] = rt.last_launch_ok ? "launch sent" : "0 profiles";
-                            elements->game_card.royale_count[1] = rt.accounts.empty() ? "0/5 party" : std::to_string(rt.accounts.size()) + "/5 party";
-                            elements->game_card.royale_count[2] = std::to_string(rt.ready_accept_attempts) + " attempts";
+                            elements->game_card.royale_count[1] = "GC " + std::to_string(rt.gc_account_ready_count()) + "/" + std::to_string(rt.gc_account_total_count());
+                            elements->game_card.royale_count[2] = rt.accounts.empty() ? "0/5 party" : std::to_string(rt.accounts.size()) + "/5 party";
+                            elements->game_card.royale_count[3] = std::to_string(rt.ready_accept_attempts) + " attempts";
                         }
                         widgets->games_child("core_modules", "Core Modules", "H", "V0.2");
 						{
@@ -242,9 +243,11 @@ void c_gui::render()
 						if (var->gui.active_stage == 5)
 							widgets->product_page(var->gui.fortnite_player, 3, "Sandbox", module_desc, "0 profiles", "22.05.2026", "Ready", "0");
 						if (var->gui.active_stage == 6)
-							widgets->product_page(var->gui.cs_player, 4, "Party Builder", module_desc, "0/5", "22.05.2026", "Ready", "0");
+							widgets->product_page(var->gui.cs_player, 4, "GC Accounts", module_desc, "GC 0/0", "22.05.2026", "Ready", "0");
 						if (var->gui.active_stage == 7)
-							widgets->product_page(var->gui.apex_player, 0, "Ready Check", module_desc, "0/0", "22.05.2026", "Ready", "0");
+							widgets->product_page(var->gui.cs_player, 5, "Party Builder", module_desc, "0/5", "22.05.2026", "Ready", "0");
+						if (var->gui.active_stage == 8)
+							widgets->product_page(var->gui.apex_player, 6, "Ready Check", module_desc, "0/0", "22.05.2026", "Ready", "0");
 
 				}
 				gui->end_content();

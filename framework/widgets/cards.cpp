@@ -151,11 +151,11 @@ bool c_widgets::game_card(std::string_view widgets_id, std::string_view name, st
     draw->rect_filled(window->DrawList, module_zone.Min, module_zone.Max, draw->get_clr(clr->main.accent, 0.10f + state->alpha[1] * 0.18f), SCALE(elements->game_card.img_rounding));
     draw->rect(window->DrawList, module_zone.Min, module_zone.Max, draw->get_clr(clr->main.accent, hovered ? 0.36f : 0.16f), SCALE(elements->game_card.img_rounding));
 
-    const char* labels[] = { "DASHBOARD", "ACCOUNTS", "WINDOWS", "SANDBOX", "PARTY", "READY" };
-    const char* icons[] = { "A", "B", "H", "O", "I", "V" };
+    const char* labels[] = { "DASHBOARD", "ACCOUNTS", "WINDOWS", "SANDBOX", "GC ACCOUNTS", "PARTY", "READY" };
+    const char* icons[] = { "A", "B", "H", "O", "B", "I", "V" };
     int idx = img_id;
     if (idx < 0) idx = 0;
-    if (idx > 5) idx = 5;
+    if (idx > 6) idx = 6;
 
     ImVec2 icon_center(module_zone.Min.x + SCALE(34), module_zone.Min.y + SCALE(34));
     draw->circle_filled(window->DrawList, icon_center, SCALE(22), draw->get_clr(clr->main.accent, 0.22f), 32);

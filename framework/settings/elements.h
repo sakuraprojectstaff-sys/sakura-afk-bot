@@ -83,9 +83,9 @@ public:
 		std::vector<std::string> fps_count{ "Local", "0 saved", "0 found" };
 		std::vector<bool> fps_ready{ true, true, true };
 
-		std::vector<std::string> royale_games{ "Sandbox", "Party Builder", "Ready Check" };
-		std::vector<std::string> royale_count{ "0 profiles", "0/5 party", "0/0 ready" };
-		std::vector<bool> royale_ready{ true, true, true };
+		std::vector<std::string> royale_games{ "Sandbox", "GC Accounts", "Party Builder", "Ready Check" };
+		std::vector<std::string> royale_count{ "0 profiles", "GC 0/0", "0/5 party", "0/0 ready" };
+		std::vector<bool> royale_ready{ true, true, true, true };
 	} game_card;
 
 	struct

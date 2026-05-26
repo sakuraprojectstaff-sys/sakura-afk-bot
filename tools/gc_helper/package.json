@@ -1,0 +1,17 @@
+{
+  "name": "afkbot-gc-helper",
+  "version": "0.2.34",
+  "private": true,
+  "description": "AFKbot Loader Dota 2 Game Coordinator party helper sidecar",
+  "main": "gc_party_helper.js",
+  "scripts": {
+    "start": "node gc_party_helper.js --action full --accounts ../../data/config/gc_accounts.json --plan ../../data/config/gc_party_plan.json",
+    "invite": "node gc_party_helper.js --action invite --accounts ../../data/config/gc_accounts.json --plan ../../data/config/gc_party_plan.json",
+    "accept": "node gc_party_helper.js --action accept --accounts ../../data/config/gc_accounts.json --plan ../../data/config/gc_party_plan.json"
+  },
+  "dependencies": {
+    "steam-user": "^5.2.1",
+    "steam-totp": "^2.1.2",
+    "dota2-user": "^2.1.1"
+  }
+}

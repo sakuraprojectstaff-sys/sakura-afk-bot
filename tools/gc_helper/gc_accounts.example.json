@@ -1,0 +1,25 @@
+{
+  "options": {
+    "inviteDelayMs": 1500,
+    "acceptWindowMs": 90000,
+    "logTraffic": false
+  },
+  "accounts": [
+    {
+      "label": "Dota2Ferma",
+      "steam64": "76561198702116276",
+      "accountName": "PUT_STEAM_LOGIN_HERE",
+      "password": "PUT_STEAM_PASSWORD_HERE",
+      "sharedSecret": "OPTIONAL_STEAM_GUARD_SHARED_SECRET",
+      "twoFactorCode": "OPTIONAL_ONE_TIME_CODE"
+    },
+    {
+      "label": "Dota2FermaSakura",
+      "steam64": "76561199783381149",
+      "accountName": "PUT_STEAM_LOGIN_HERE",
+      "password": "PUT_STEAM_PASSWORD_HERE",
+      "sharedSecret": "OPTIONAL_STEAM_GUARD_SHARED_SECRET",
+      "twoFactorCode": "OPTIONAL_ONE_TIME_CODE"
+    }
+  ]
+}

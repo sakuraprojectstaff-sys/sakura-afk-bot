@@ -1,8 +1,21 @@
 {
-  "sandboxie_start_exe": "C:\\Program Files\\Sandboxie-Plus\\Start.exe",
+  "sandboxie_start_exe": "",
+  "steam_exe": "",
   "dota_launch_uri": "steam://rungameid/570",
+  "sandbox_launch_backend": "steam_applaunch",
+  "dota2_exe": "",
+  "launch_count": 3,
   "profiles": [
-    { "slot": 1, "sandbox_name": "DotaBox01", "enabled": true },
-    { "slot": 2, "sandbox_name": "DotaBox02", "enabled": true }
+    { "slot": 1, "sandbox_name": "Dota2Ferma", "enabled": true },
+    { "slot": 2, "sandbox_name": "Dota2FermaSakura", "enabled": true },
+    { "slot": 3, "sandbox_name": "Dota2FermaSakura2", "enabled": true },
+    { "slot": 4, "sandbox_name": "Dota2FermaSakura3", "enabled": true },
+    { "slot": 5, "sandbox_name": "Dota2FermaSakura4", "enabled": true },
+    { "slot": 6, "sandbox_name": "Dota2FermaSakura5", "enabled": true },
+    { "slot": 7, "sandbox_name": "Dota2FermaSakura6", "enabled": true },
+    { "slot": 8, "sandbox_name": "Dota2FermaSakura7", "enabled": true },
+    { "slot": 9, "sandbox_name": "Dota2FermaSakura8", "enabled": true },
+    { "slot": 10, "sandbox_name": "Dota2FermaSakura9", "enabled": true },
+    { "slot": 11, "sandbox_name": "Dota2FermaSakura10", "enabled": true }
   ]
 }

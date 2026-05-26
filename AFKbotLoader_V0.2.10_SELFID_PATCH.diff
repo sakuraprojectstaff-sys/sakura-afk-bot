@@ -1,0 +1,205 @@
+--- /mnt/data/afk_runtime_patched_v030.h	2026-05-26 15:44:32.925254961 +0000
++++ /mnt/data/afk_runtime_selfid_v031.h	2026-05-26 15:51:43.373047379 +0000
+@@ -1629,7 +1629,7 @@
+                 accounts[slot - 1].hwnd = w.hwnd;
+             }
+ 
+-            log("[ACCOUNT] Slot " + std::to_string(slot) + " [" + role + "]: sandbox=" + sandbox + " hwnd=" + hwnd_to_hex(w.hwnd) + " account_id=" + std::to_string(dota_id) + " steam64=" + std::to_string(steam64) + " steam3=" + steam3 + " source=" + source);
++            log("[ACCOUNT] Slot " + std::to_string(slot) + " [" + role + "]: account_id=" + std::to_string(dota_id) + " steam64=" + std::to_string(steam64) + " steam3=" + steam3 + " source=" + source);
+         }
+ 
+         static bool is_digits_only(const std::wstring& value)
+@@ -1764,11 +1764,157 @@
+             }
+         }
+ 
++        std::filesystem::path host_path_from_sandbox_path(const std::filesystem::path& sandbox_path) const
++        {
++            std::wstring path = sandbox_path.wstring();
++            if (path.empty())
++                return {};
++
++            std::replace(path.begin(), path.end(), L'/', L'\\');
++            std::wstring low = lowercase(path);
++
++            const std::wstring marker = L"\\drive\\";
++            size_t pos = low.find(marker);
++            if (pos == std::wstring::npos)
++                return {};
++
++            size_t drive_start = pos + marker.size();
++            size_t drive_end = low.find(L'\\', drive_start);
++            if (drive_end == std::wstring::npos || drive_end <= drive_start)
++                return {};
++
++            std::wstring drive_name = path.substr(drive_start, drive_end - drive_start);
++            if (drive_name.size() != 1 || !iswalpha(drive_name[0]))
++                return {};
++
++            wchar_t drive_letter = static_cast<wchar_t>(std::towupper(drive_name[0]));
++            std::wstring rest = path.substr(drive_end);
++            std::wstring host;
++            host.push_back(drive_letter);
++            host += L":";
++            host += rest;
++            return std::filesystem::path(host);
++        }
++
++        std::filesystem::path host_drive_from_sandbox_drive(const std::filesystem::path& sandbox_drive) const
++        {
++            std::wstring name = sandbox_drive.filename().wstring();
++            if (name.size() != 1 || !iswalpha(name[0]))
++                return {};
++
++            wchar_t drive_letter = static_cast<wchar_t>(std::towupper(name[0]));
++            std::wstring host;
++            host.push_back(drive_letter);
++            host += L":\\";
++            return std::filesystem::path(host);
++        }
++
++        void push_standard_steam_roots_for_drive(const std::filesystem::path& drive, std::vector<std::filesystem::path>& roots) const
++        {
++            if (drive.empty())
++                return;
++
++            push_unique_path(roots, drive / L"Program Files (x86)" / L"Steam");
++            push_unique_path(roots, drive / L"Program Files" / L"Steam");
++        }
++
++        std::filesystem::path read_steam_root_from_registry(HKEY hive, const wchar_t* key_path, const wchar_t* value_name) const
++        {
++            HKEY key{};
++            if (RegOpenKeyExW(hive, key_path, 0, KEY_READ | KEY_WOW64_32KEY, &key) != ERROR_SUCCESS &&
++                RegOpenKeyExW(hive, key_path, 0, KEY_READ | KEY_WOW64_64KEY, &key) != ERROR_SUCCESS &&
++                RegOpenKeyExW(hive, key_path, 0, KEY_READ, &key) != ERROR_SUCCESS)
++            {
++                return {};
++            }
++
++            wchar_t buffer[MAX_PATH * 4]{};
++            DWORD type = 0;
++            DWORD bytes = sizeof(buffer);
++            LONG result = RegQueryValueExW(key, value_name, nullptr, &type, reinterpret_cast<LPBYTE>(buffer), &bytes);
++            RegCloseKey(key);
++
++            if (result != ERROR_SUCCESS || (type != REG_SZ && type != REG_EXPAND_SZ) || buffer[0] == 0)
++                return {};
++
++            if (type == REG_EXPAND_SZ)
++            {
++                wchar_t expanded[MAX_PATH * 4]{};
++                if (ExpandEnvironmentStringsW(buffer, expanded, static_cast<DWORD>(std::size(expanded))) > 0)
++                    return std::filesystem::path(expanded);
++            }
++
++            return std::filesystem::path(buffer);
++        }
++
++        void push_registry_steam_roots(std::vector<std::filesystem::path>& roots) const
++        {
++            const wchar_t* key_paths[] = {
++                L"Software\\Valve\\Steam",
++                L"SOFTWARE\\Valve\\Steam",
++                L"SOFTWARE\\WOW6432Node\\Valve\\Steam"
++            };
++
++            const wchar_t* value_names[] = {
++                L"SteamPath",
++                L"InstallPath"
++            };
++
++            for (const wchar_t* key_path : key_paths)
++            {
++                for (const wchar_t* value_name : value_names)
++                {
++                    push_unique_path(roots, read_steam_root_from_registry(HKEY_CURRENT_USER, key_path, value_name));
++                    push_unique_path(roots, read_steam_root_from_registry(HKEY_LOCAL_MACHINE, key_path, value_name));
++                }
++            }
++        }
++
++        void push_logical_drive_steam_roots(std::vector<std::filesystem::path>& roots) const
++        {
++            DWORD drives = GetLogicalDrives();
++            for (int i = 0; i < 26; ++i)
++            {
++                if ((drives & (1u << i)) == 0)
++                    continue;
++
++                wchar_t root[] = { static_cast<wchar_t>(L'A' + i), L':', L'\\', L'\0' };
++                push_standard_steam_roots_for_drive(std::filesystem::path(root), roots);
++            }
++        }
++
++        std::string steam_root_candidate_summary(const DotaWindowInfo& w, size_t max_items = 10) const
++        {
++            auto roots = steam_root_candidates_from_window(w);
++            if (roots.empty())
++                return "none";
++
++            std::ostringstream ss;
++            size_t count = 0;
++            for (const auto& root : roots)
++            {
++                if (count)
++                    ss << " | ";
++                ss << narrow(root.wstring());
++                ++count;
++                if (count >= max_items)
++                    break;
++            }
++            if (roots.size() > max_items)
++                ss << " | +" << (roots.size() - max_items) << " more";
++            return ss.str();
++        }
++
+         std::vector<std::filesystem::path> steam_root_candidates_from_window(const DotaWindowInfo& w) const
+         {
+             std::vector<std::filesystem::path> roots;
+ 
+-            push_unique_path(roots, steam_root_from_window(w));
++            std::filesystem::path direct_root = steam_root_from_window(w);
++            push_unique_path(roots, direct_root);
++            push_unique_path(roots, host_path_from_sandbox_path(direct_root));
++
++            push_registry_steam_roots(roots);
++            push_logical_drive_steam_roots(roots);
+ 
+             std::filesystem::path box_root = sandbox_box_root_from_window(w);
+             if (!box_root.empty())
+@@ -1785,10 +1931,12 @@
+                         if (!drive_entry.is_directory(ec))
+                             continue;
+ 
+-                        const std::filesystem::path drive = drive_entry.path();
+-                        push_unique_path(roots, drive / L"Program Files (x86)" / L"Steam");
+-                        push_unique_path(roots, drive / L"Program Files" / L"Steam");
+-                        scan_steam_roots_under(drive, roots, 6);
++                        const std::filesystem::path sandbox_drive = drive_entry.path();
++                        push_standard_steam_roots_for_drive(sandbox_drive, roots);
++                        scan_steam_roots_under(sandbox_drive, roots, 6);
++
++                        std::filesystem::path host_drive = host_drive_from_sandbox_drive(sandbox_drive);
++                        push_standard_steam_roots_for_drive(host_drive, roots);
+                     }
+                 }
+ 
+@@ -2003,7 +2151,7 @@
+             if (text.empty())
+             {
+                 auto guessed = guess_dota_condump_path(w, names.front());
+-                log("Slot " + std::to_string(slot) + ": account dump/log not found. Console may have been closed before commands, or Dota wrote dump to an unknown folder. First guess: " + narrow(guessed.wstring()));
++                log("[ACCOUNT] Slot " + std::to_string(slot) + " [" + account_role_for_slot(slot) + "]: console dump/log not found. First guess=" + narrow(guessed.wstring()));
+                 return;
+             }
+ 
+@@ -2047,7 +2195,7 @@
+                     continue;
+                 }
+ 
+-                log("[ACCOUNT] Slot " + std::to_string(slot) + " [" + account_role_for_slot(slot) + "]: source=userdata/loginusers failed, trying source=console");
++                log("[ACCOUNT] Slot " + std::to_string(slot) + " [" + account_role_for_slot(slot) + "]: source=userdata/loginusers failed, checked=" + steam_root_candidate_summary(w) + ", trying source=console");
+ 
+                 std::string base = "afkbot_account_slot" + two_digits(slot);
+                 auto names = account_dump_names_for_slot(slot);

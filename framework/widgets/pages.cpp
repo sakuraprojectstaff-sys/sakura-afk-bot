@@ -39,6 +39,33 @@ static bool afk_loader_button(const char* id, const ImVec2& min, const ImVec2& m
     return pressed;
 }
 
+
+static bool afk_sandbox_profile_row(const char* id, const ImVec2& min, const ImVec2& max, std::string_view label, bool selected, bool running)
+{
+    ImGui::SetCursorScreenPos(min);
+    ImGui::InvisibleButton(id, max - min);
+
+    bool hovered = ImGui::IsItemHovered();
+    bool pressed = ImGui::IsItemClicked(ImGuiMouseButton_Left);
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    const float rounding = SCALE(7.f);
+
+    draw->rect_filled(dl, min, max, draw->get_clr(clr->main.text, hovered ? 0.055f : 0.025f), rounding);
+    draw->rect(dl, min, max, draw->get_clr(selected ? clr->main.accent : clr->main.text, selected ? 0.42f : 0.08f), rounding);
+
+    ImVec2 box_min = min + SCALE(8.f, 6.f);
+    ImVec2 box_max = box_min + SCALE(14.f, 14.f);
+    draw->rect(dl, box_min, box_max, draw->get_clr(selected ? clr->main.accent : clr->main.text, selected ? 0.92f : 0.22f), SCALE(4.f));
+    if (selected)
+        draw->rect_filled(dl, box_min + SCALE(3.f, 3.f), box_max - SCALE(3.f, 3.f), draw->get_clr(clr->main.accent, hovered ? 0.95f : 0.76f), SCALE(3.f));
+
+    std::string text(label);
+    if (running)
+        text += std::string(gui->language("  running", "  запущен"));
+    draw->text_clipped(dl, font->get(suisse_intl_medium_data, 12), min + SCALE(30.f, 0.f), max - SCALE(8.f, 0.f), draw->get_clr(clr->main.text, selected ? 0.68f : 0.42f), text.c_str(), gui->text_end(text.c_str()), NULL, ImVec2(0.f, 0.5f));
+    return pressed;
+}
+
 static void afk_section_caption(const ImVec2& panel_min, const ImVec2& panel_max, float& y, std::string_view title)
 {
     ImVec2 min = ImVec2(panel_min.x + SCALE(26.f), y);
@@ -89,7 +116,7 @@ static void afk_render_config_hint(ImDrawList* dl, const ImVec2& min, const ImVe
     auto& rt = afkbot::runtime();
     std::string line1 = afk_lang("Console key: ", "Кнопка консоли: ") + rt.console_key_name() + "  |  " + afk_lang("Save config: ", "Сохранение: ") + (rt.save_config_enabled ? "ON" : "OFF");
     std::string line2 = afk_lang("Runtime logs are moved to a separate console. Enable it in Settings.", "Логи вынесены в отдельную консоль. Включи её в настройках.");
-    std::string line3 = afk_lang("Account ID uses dota_game_account_client_debug. Party debug only verifies party.", "ID аккаунта берётся через dota_game_account_client_debug. Party debug только проверяет пати.");
+    std::string line3 = afk_lang("Account ID uses Steam userdata/loginusers first. Console is only fallback.", "ID аккаунта берётся из Steam userdata/loginusers. Консоль только fallback.");
     draw->text_clipped(dl, font->get(suisse_intl_medium_data, 12), min, max, draw->get_clr(clr->main.text, 0.68f), line1.c_str());
     draw->text_clipped(dl, font->get(suisse_intl_medium_data, 12), min + SCALE(0, 18), max, draw->get_clr(clr->main.text, 0.52f), line2.c_str());
     draw->text_clipped(dl, font->get(suisse_intl_medium_data, 12), min + SCALE(0, 36), max, draw->get_clr(clr->main.text, 0.38f), line3.c_str());
@@ -119,11 +146,15 @@ static void afk_render_windows(ImDrawList* dl, const ImVec2& min, const ImVec2& 
         draw->text_clipped(dl, font->get(suisse_intl_medium_data, 12), min, max, draw->get_clr(clr->main.text, 0.45f), afk_lang("No Dota windows found yet. Press Find Windows.", "Окна Dota ещё не найдены. Нажми Найти окна.").c_str());
         return;
     }
+
+    draw->text_clipped(dl, font->get(suisse_intl_medium_data, 12), ImVec2(min.x, y), max, draw->get_clr(clr->main.text, 0.72f), afk_lang("Slot | Party | Role | Sandbox | PID | HWND", "Слот | Пати | Роль | Sandbox | PID | HWND").c_str());
+    y += SCALE(20.f);
+
     int shown = 0;
     for (const auto& w : rt.windows)
     {
-        if (shown++ >= 8) break;
-        std::string line = "Slot " + std::to_string(w.slot) + " | HWND " + afkbot::hwnd_to_hex(w.hwnd) + " | PID " + std::to_string(w.pid) + " | " + afkbot::rect_to_string(w.rect);
+        if (shown++ >= 10) break;
+        std::string line = std::to_string(w.slot) + " | P" + std::to_string(w.party) + " | " + w.role + " | " + rt.sandbox_name_for_window(w, w.slot) + " | " + std::to_string(w.pid) + " | " + afkbot::hwnd_to_hex(w.hwnd);
         draw->text_clipped(dl, font->get(suisse_intl_medium_data, 12), ImVec2(min.x, y), max, draw->get_clr(clr->main.text, 0.55f), line.c_str());
         y += SCALE(18.f);
     }
@@ -135,16 +166,178 @@ static void afk_render_accounts(ImDrawList* dl, const ImVec2& min, const ImVec2&
     float y = min.y;
     if (rt.accounts.empty())
     {
-        draw->text_clipped(dl, font->get(suisse_intl_medium_data, 12), min, max, draw->get_clr(clr->main.text, 0.45f), afk_lang("Accounts are created automatically after Find Windows / Verify Party.", "Аккаунты привязываются автоматически после поиска окон / проверки пати.").c_str());
+        draw->text_clipped(dl, font->get(suisse_intl_medium_data, 12), min, max, draw->get_clr(clr->main.text, 0.45f), afk_lang("Accounts are created automatically after Find Windows / Identify IDs.", "Аккаунты создаются автоматически после Найти окна / Определить ID.").c_str());
         return;
     }
+
+    draw->text_clipped(dl, font->get(suisse_intl_medium_data, 12), ImVec2(min.x, y), max, draw->get_clr(clr->main.text, 0.72f), afk_lang("Slot | Party | Role | Sandbox | Account ID | Source | Status", "Слот | Пати | Роль | Sandbox | Account ID | Source | Статус").c_str());
+    y += SCALE(20.f);
+
     int shown = 0;
     for (const auto& a : rt.accounts)
     {
-        if (shown++ >= 8) break;
-        std::string line = "Bot " + std::to_string(a.slot) + " | " + a.sandbox_name + " | " + afkbot::hwnd_to_hex(a.hwnd) + " | " + a.state;
-        draw->text_clipped(dl, font->get(suisse_intl_medium_data, 12), ImVec2(min.x, y), max, draw->get_clr(clr->main.text, 0.55f), line.c_str());
+        if (shown++ >= 10) break;
+        std::string id = a.dota_id ? std::to_string(a.dota_id) : afk_lang("ID not found", "ID не найден");
+        std::string src = a.source.empty() ? "unknown" : a.source;
+        std::string status = a.dota_id ? "Ready" : a.state;
+        std::string line = std::to_string(a.slot) + " | P" + std::to_string(a.party) + " | " + a.role + " | " + a.sandbox_name + " | " + id + " | " + src + " | " + status;
+        draw->text_clipped(dl, font->get(suisse_intl_medium_data, 12), ImVec2(min.x, y), max, draw->get_clr(clr->main.text, a.dota_id ? 0.60f : 0.38f), line.c_str());
         y += SCALE(18.f);
+    }
+}
+
+static void afk_render_parties(ImDrawList* dl, const ImVec2& min, const ImVec2& max)
+{
+    auto& rt = afkbot::runtime();
+    float y = min.y;
+    if (rt.accounts.empty())
+    {
+        draw->text_clipped(dl, font->get(suisse_intl_medium_data, 12), min, max, draw->get_clr(clr->main.text, 0.45f), afk_lang("Build parties after Find Windows / Identify IDs.", "Собери пати после Найти окна / Определить ID.").c_str());
+        return;
+    }
+
+    std::string backend_line = afk_lang("Invite backend: ", "Бэкенд инвайтов: ") + rt.party_invite_backend_label() +
+        afk_lang(" | invite tpl: ", " | шаблон invite: ") + (rt.party_invite_command_template.empty() ? "OFF" : "ON") +
+        afk_lang(" | accept tpl: ", " | шаблон accept: ") + (rt.party_accept_command_template.empty() ? "OFF" : "ON");
+    draw->text_clipped(dl, font->get(suisse_intl_medium_data, 12), ImVec2(min.x, y), max, draw->get_clr(clr->main.text, 0.58f), backend_line.c_str());
+    y += SCALE(22.f);
+
+    int parties = rt.party_count_from_windows();
+    for (int party = 1; party <= parties; ++party)
+    {
+        std::string title = "Party " + std::to_string(party);
+        draw->text_clipped(dl, font->get(suisse_intl_medium_data, 13), ImVec2(min.x, y), max, draw->get_clr(clr->main.text, 0.72f), title.c_str());
+        y += SCALE(20.f);
+
+        for (const auto& a : rt.accounts)
+        {
+            if (a.party != party)
+                continue;
+            std::string id = a.dota_id ? std::to_string(a.dota_id) : afk_lang("ID not found", "ID не найден");
+            std::string line = "  " + a.role + " | Slot " + std::to_string(a.slot) + " | " + a.sandbox_name + " | " + id;
+            draw->text_clipped(dl, font->get(suisse_intl_medium_data, 12), ImVec2(min.x, y), max, draw->get_clr(clr->main.text, a.role == "LEADER" ? 0.70f : 0.52f), line.c_str());
+            y += SCALE(18.f);
+        }
+        y += SCALE(8.f);
+    }
+}
+
+
+static void afk_render_gc_accounts(ImDrawList* dl, const ImVec2& min, const ImVec2& max)
+{
+    auto& rt = afkbot::runtime();
+    rt.ensure_gc_accounts_from_detected();
+    float y = min.y;
+
+    int total = rt.gc_account_total_count();
+    int ready = rt.gc_account_ready_count();
+    std::string head = afk_lang("GC accounts ready: ", "GC аккаунты готовы: ") + std::to_string(ready) + "/" + std::to_string(total);
+    draw->text_clipped(dl, font->get(suisse_intl_medium_data, 13), ImVec2(min.x, y), max, draw->get_clr(clr->main.text, 0.72f), head.c_str());
+    y += SCALE(24.f);
+
+    if (total <= 0)
+    {
+        draw->text_clipped(dl, font->get(suisse_intl_medium_data, 12), ImVec2(min.x, y), max, draw->get_clr(clr->main.text, 0.45f), afk_lang("Run Verify + Identify first. Then sync detected accounts here.", "Сначала Verify + Identify. Потом синхронизируй аккаунты здесь.").c_str());
+        return;
+    }
+
+    for (int i = 0; i < static_cast<int>(rt.gc_accounts.size()); ++i)
+    {
+        const auto& e = rt.gc_accounts[static_cast<size_t>(i)];
+        std::string prefix = (i == rt.gc_account_selected_index) ? "> " : "  ";
+        std::string state = rt.gc_account_status_text(e);
+        std::string line = prefix + std::to_string(i + 1) + ". " + e.sandbox_name + " | " + std::to_string(e.steamid64) + " | " + state;
+        float alpha = rt.gc_account_complete(e) ? 0.72f : 0.46f;
+        draw->text_clipped(dl, font->get(suisse_intl_medium_data, 12), ImVec2(min.x, y), max, draw->get_clr(clr->main.text, alpha), line.c_str());
+        y += SCALE(19.f);
+        if (y > max.y - SCALE(18.f)) break;
+    }
+
+    y += SCALE(8.f);
+    draw->text_clipped(dl, font->get(suisse_intl_medium_data, 11), ImVec2(min.x, y), max, draw->get_clr(clr->main.text, 0.38f), afk_lang("Data is stored encrypted with Windows DPAPI. Runtime JSON is temporary for Node helper.", "Данные хранятся через Windows DPAPI. Runtime JSON временный для Node helper.").c_str());
+}
+
+static void afk_render_sandbox_status(ImDrawList* dl, const ImVec2& min, const ImVec2& max)
+{
+    auto& rt = afkbot::runtime();
+    std::vector<std::string> profiles = rt.sandbox_names_from_profiles();
+    std::vector<std::string> active = rt.active_sandbox_names_for_launch();
+    float y = min.y;
+
+    std::string head = afk_lang("Selected: ", "Выбрано: ") + std::to_string(active.size()) + "/" + std::to_string(profiles.size()) +
+        afk_lang(" | backend: ", " | запуск: ") + rt.sandbox_launch_backend_label();
+    draw->text_clipped(dl, font->get(suisse_intl_medium_data, 12), ImVec2(min.x, y), max, draw->get_clr(clr->main.text, 0.72f), head.c_str());
+    y += SCALE(22.f);
+
+    if (profiles.empty())
+    {
+        draw->text_clipped(dl, font->get(suisse_intl_medium_data, 12), ImVec2(min.x, y), max, draw->get_clr(clr->main.text, 0.45f), afk_lang("No sandbox profiles found.", "Профили песочниц не найдены.").c_str());
+        return;
+    }
+
+    const float row_h = SCALE(23.f);
+    const float row_gap = SCALE(4.f);
+    const float row_w = max.x - min.x;
+    int visible_count = 0;
+
+    for (int i = 0; i < static_cast<int>(profiles.size()) && i < 12; ++i)
+    {
+        float ry = y + visible_count * (row_h + row_gap);
+        if (ry + row_h > max.y - SCALE(18.f))
+            break;
+
+        ImVec2 row_min(min.x, ry);
+        ImVec2 row_max(min.x + row_w, ry + row_h);
+        bool selected = rt.is_sandbox_launch_profile_selected(profiles[static_cast<size_t>(i)]);
+        bool running = rt.sandbox_window_already_running(profiles[static_cast<size_t>(i)]);
+        std::string label = std::to_string(i + 1) + ". " + profiles[static_cast<size_t>(i)];
+        std::string id = "SandboxProfileRow_" + std::to_string(i);
+        if (afk_sandbox_profile_row(id.c_str(), row_min, row_max, label, selected, running))
+            rt.toggle_sandbox_launch_profile(profiles[static_cast<size_t>(i)]);
+        ++visible_count;
+    }
+
+    y += visible_count * (row_h + row_gap) + SCALE(4.f);
+    draw->text_clipped(dl, font->get(suisse_intl_medium_data, 11), ImVec2(min.x, y), max, draw->get_clr(clr->main.text, 0.38f), afk_lang("Left click toggles a sandbox profile. Launch uses only checked profiles.", "ЛКМ включает/выключает песочницу. Запуск берёт только отмеченные.").c_str());
+}
+
+static void afk_render_ready_status(ImDrawList* dl, const ImVec2& min, const ImVec2& max)
+{
+    auto& rt = afkbot::runtime();
+    float y = min.y;
+
+    int leaders = 0;
+    int bots = 0;
+    for (const auto& a : rt.accounts)
+    {
+        if (a.role == "LEADER") ++leaders;
+        else ++bots;
+    }
+
+    std::string line1 = afk_lang("Ready-check leaders: ", "Лидеров ready-check: ") + std::to_string(leaders) +
+        afk_lang(" | bots: ", " | ботов: ") + std::to_string(bots);
+    std::string line2 = afk_lang("Accept attempts: ", "Попыток принять: ") + std::to_string(rt.ready_accept_attempts);
+    draw->text_clipped(dl, font->get(suisse_intl_medium_data, 12), ImVec2(min.x, y), max, draw->get_clr(clr->main.text, 0.68f), line1.c_str());
+    y += SCALE(22.f);
+    draw->text_clipped(dl, font->get(suisse_intl_medium_data, 12), ImVec2(min.x, y), max, draw->get_clr(clr->main.text, 0.52f), line2.c_str());
+    y += SCALE(26.f);
+
+    if (rt.windows.empty())
+    {
+        draw->text_clipped(dl, font->get(suisse_intl_medium_data, 12), ImVec2(min.x, y), max, draw->get_clr(clr->main.text, 0.45f), afk_lang("No Dota windows found yet. Press Find Windows first.", "Окна Dota ещё не найдены. Сначала нажми Найти окна.").c_str());
+        return;
+    }
+
+    draw->text_clipped(dl, font->get(suisse_intl_medium_data, 12), ImVec2(min.x, y), max, draw->get_clr(clr->main.text, 0.60f), afk_lang("Ready tab is now used for actual ready-check actions only.", "Вкладка Ready теперь только для действий ready-check.").c_str());
+    y += SCALE(22.f);
+
+    for (const auto& w : rt.windows)
+    {
+        std::string line = std::to_string(w.slot) + " | P" + std::to_string(w.party) + " | " + w.role + " | " + w.sandbox_name;
+        draw->text_clipped(dl, font->get(suisse_intl_medium_data, 12), ImVec2(min.x, y), max, draw->get_clr(clr->main.text, w.role == "LEADER" ? 0.70f : 0.52f), line.c_str());
+        y += SCALE(18.f);
+        if (y > max.y - SCALE(18.f))
+            break;
     }
 }
 
@@ -156,32 +349,26 @@ static void afk_module_controls(std::string_view name, const ImVec2& panel_min, 
 
     if (name == "Dashboard")
     {
-        afk_section_caption(panel_min, panel_max, y, afk_lang("Sandboxie", "Sandboxie"));
-        action = afk_button_pair("DashSandboxPair", panel_min, panel_max, y, afk_lang("Launch all", "Запустить все"), afk_lang("Find windows", "Найти окна"));
+        afk_section_caption(panel_min, panel_max, y, afk_lang("Core", "Основное"));
+        action = afk_button_pair("DashCorePair", panel_min, panel_max, y, afk_lang("Launch selected", "Запустить выбранные"), afk_lang("Find windows", "Найти окна"));
         if (action == 0) rt.launch_all_sandboxie();
         if (action == 1) rt.find_dota_windows();
 
-        afk_section_caption(panel_min, panel_max, y, afk_lang("Account binding", "Привязка аккаунтов"));
-        action = afk_button_pair("DashWindowPair", panel_min, panel_max, y, afk_lang("Bind HWND", "Привязать HWND"), afk_lang("Identify IDs", "Определить ID"));
-        if (action == 0) rt.ensure_demo_accounts_from_windows();
-        if (action == 1) rt.identify_all();
+        action = afk_button_pair("DashAccountPair", panel_min, panel_max, y, afk_lang("Identify accounts", "Определить аккаунты"), afk_lang("Build parties", "Собрать пати"));
+        if (action == 0) rt.identify_all();
+        if (action == 1) rt.build_party_model();
 
-        afk_section_caption(panel_min, panel_max, y, afk_lang("Party", "Пати"));
-        action = afk_button_pair("DashPartyPair", panel_min, panel_max, y, afk_lang("Verify party", "Проверить пати"), afk_lang("Open console", "Открыть консоль"));
-        if (action == 0) rt.verify_party_all();
-        if (action == 1) rt.open_console_all();
+        afk_section_caption(panel_min, panel_max, y, afk_lang("Auto pipeline", "Авто пайплайн"));
+        action = afk_button_pair("DashAutoPair", panel_min, panel_max, y, afk_lang("Auto start", "Авто старт"), afk_lang("Auto + party", "Авто + пати"), false);
+        if (action == 0) rt.run_auto_pipeline(false);
+        if (action == 1) rt.run_auto_pipeline(true);
     }
     else if (name == "Bot Accounts")
     {
         afk_section_caption(panel_min, panel_max, y, afk_lang("Accounts", "Аккаунты"));
-        action = afk_button_pair("AccountsPair1", panel_min, panel_max, y, afk_lang("Bind HWND", "Привязать HWND"), afk_lang("Identify IDs", "Определить ID"));
-        if (action == 0) rt.ensure_demo_accounts_from_windows();
-        if (action == 1) rt.identify_all();
-
-        afk_section_caption(panel_min, panel_max, y, afk_lang("Windows", "Окна"));
-        action = afk_button_pair("AccountsPair2", panel_min, panel_max, y, afk_lang("Refresh", "Обновить"), afk_lang("Open console", "Открыть консоль"));
-        if (action == 0) { rt.find_dota_windows(); rt.ensure_demo_accounts_from_windows(); }
-        if (action == 1) rt.open_console_all();
+        action = afk_button_pair("AccountsPair1", panel_min, panel_max, y, afk_lang("Identify IDs", "Определить ID"), afk_lang("Copy IDs", "Копировать ID"));
+        if (action == 0) rt.identify_all();
+        if (action == 1) rt.copy_party_ids_to_clipboard();
     }
     else if (name == "Dota Windows")
     {
@@ -190,38 +377,90 @@ static void afk_module_controls(std::string_view name, const ImVec2& panel_min, 
         if (action == 0) rt.find_dota_windows();
         if (action == 1) rt.arrange_2x5();
 
-        afk_section_caption(panel_min, panel_max, y, afk_lang("Console", "Консоль"));
-        action = afk_button_pair("WindowsPair2", panel_min, panel_max, y, afk_lang("Open all", "Открыть все"), afk_lang("Identify IDs", "Определить ID"));
+        action = afk_button_pair("WindowsPair2", panel_min, panel_max, y, afk_lang("Open console", "Открыть консоль"), afk_lang("Identify IDs", "Определить ID"), false);
         if (action == 0) rt.open_console_all();
         if (action == 1) rt.identify_all();
     }
     else if (name == "Sandbox")
     {
         afk_section_caption(panel_min, panel_max, y, afk_lang("Sandboxie", "Sandboxie"));
-        action = afk_button_pair("SandboxPair1", panel_min, panel_max, y, afk_lang("Launch all", "Запустить все"), afk_lang("Find after", "Найти после"));
+        action = afk_button_pair("SandboxPair1", panel_min, panel_max, y, afk_lang("Launch selected", "Запустить выбранные"), afk_lang("Verify windows", "Проверить окна"));
         if (action == 0) rt.launch_all_sandboxie();
-        if (action == 1) rt.find_dota_windows();
+        if (action == 1) rt.verify_sandbox_launch_windows();
+
+        afk_section_caption(panel_min, panel_max, y, afk_lang("Launch backend", "Способ запуска"));
+        action = afk_button_pair("SandboxBackendCycle", panel_min, panel_max, y, afk_lang("Backend <", "Бэкенд <"), afk_lang("Backend >", "Бэкенд >"), false);
+        if (action == 0) rt.cycle_sandbox_launch_backend(-1);
+        if (action == 1) rt.cycle_sandbox_launch_backend(1);
+    }
+    else if (name == "GC Accounts")
+    {
+        rt.ensure_gc_accounts_from_detected();
+        afk_section_caption(panel_min, panel_max, y, afk_lang("GC account manager", "GC аккаунты"));
+        action = afk_button_pair("GCPairSyncSave", panel_min, panel_max, y, afk_lang("Sync detected", "Синхр. найденные"), afk_lang("Save selected", "Сохранить"));
+        if (action == 0) { rt.ensure_gc_accounts_from_detected(); rt.refresh_gc_account_edit_buffers(); rt.log("[GC] GC Accounts synced from detected accounts."); }
+        if (action == 1) rt.apply_gc_account_edit_buffers(true);
+
+        action = afk_button_pair("GCPairPrevNext", panel_min, panel_max, y, afk_lang("Previous", "Предыдущий"), afk_lang("Next", "Следующий"), false);
+        if (action == 0) rt.select_gc_account_delta(-1);
+        if (action == 1) rt.select_gc_account_delta(1);
+
+        auto* selected = rt.selected_gc_account();
+        if (selected)
+        {
+            std::string selected_line = selected->sandbox_name + " | " + std::to_string(selected->steamid64);
+            draw->text_clipped(gui->window_drawlist(), font->get(suisse_intl_medium_data, 11), ImVec2(panel_min.x + SCALE(20.f), y), panel_max - SCALE(20.f, 0.f), draw->get_clr(clr->main.text, 0.52f), selected_line.c_str());
+            y += SCALE(18.f);
+
+            gui->set_screen_pos(ImVec2(panel_min.x + SCALE(20.f), y), pos_all);
+            widgets->text_field("GCLoginField", "Steam login", "B", rt.gc_account_login_buf, 128);
+            y += SCALE(elements->textfield.size.y + elements->widgets.spacing.y * 0.85f);
+
+            gui->set_screen_pos(ImVec2(panel_min.x + SCALE(20.f), y), pos_all);
+            widgets->text_field("GCPasswordField", "Password", "B", rt.gc_account_password_buf, 128);
+            y += SCALE(elements->textfield.size.y + elements->widgets.spacing.y * 0.85f);
+
+            gui->set_screen_pos(ImVec2(panel_min.x + SCALE(20.f), y), pos_all);
+            widgets->text_field("GCSecretField", "Shared secret", "B", rt.gc_account_secret_buf, 256);
+            y += SCALE(elements->textfield.size.y + elements->widgets.spacing.y * 0.85f);
+
+            gui->set_screen_pos(ImVec2(panel_min.x + SCALE(20.f), y), pos_all);
+            widgets->checkbox_ex("GCAccountEnabled", afk_lang("Enabled for GC helper", "Включён для GC helper"), &selected->enabled);
+            y += SCALE(elements->checkbox.height + elements->widgets.spacing.y);
+
+            if (afk_loader_button("GCClearCreds", ImVec2(panel_min.x + SCALE(26.f), y), ImVec2(panel_max.x - SCALE(26.f), y + SCALE(38.f)), afk_lang("Clear creds", "Очистить данные"), false))
+                rt.clear_selected_gc_account_secret_data();
+        }
+        else
+        {
+            draw->text_clipped(gui->window_drawlist(), font->get(suisse_intl_medium_data, 12), ImVec2(panel_min.x + SCALE(20.f), y), panel_max - SCALE(20.f, 0.f), draw->get_clr(clr->main.text, 0.45f), afk_lang("No accounts yet. Run Verify windows and Identify IDs first.", "Аккаунтов нет. Сначала Verify windows и Identify IDs.").c_str());
+        }
     }
     else if (name == "Party Builder")
     {
-        afk_section_caption(panel_min, panel_max, y, afk_lang("Party debug", "Party debug"));
-        action = afk_button_pair("PartyPair1", panel_min, panel_max, y, afk_lang("Verify party", "Проверить пати"), afk_lang("Open console", "Открыть консоль"));
-        if (action == 0) rt.verify_party_all();
-        if (action == 1) rt.open_console_all();
+        afk_section_caption(panel_min, panel_max, y, afk_lang("Party model", "Модель пати"));
+        action = afk_button_pair("PartyPair1", panel_min, panel_max, y, afk_lang("Build parties", "Собрать пати"), afk_lang("Copy IDs", "Копировать ID"));
+        if (action == 0) rt.build_party_model();
+        if (action == 1) rt.copy_party_ids_to_clipboard();
 
-        afk_section_caption(panel_min, panel_max, y, afk_lang("Bindings", "Привязки"));
-        action = afk_button_pair("PartyPair2", panel_min, panel_max, y, afk_lang("Identify IDs", "Определить ID"), afk_lang("Find windows", "Найти окна"));
-        if (action == 0) rt.identify_all();
-        if (action == 1) rt.find_dota_windows();
+        afk_section_caption(panel_min, panel_max, y, afk_lang("Game Coordinator", "Game Coordinator"));
+        action = afk_button_pair("PartyBackendCycle", panel_min, panel_max, y, afk_lang("Backend <", "Бэкенд <"), afk_lang("Backend >", "Бэкенд >"), false);
+        if (action == 0) rt.cycle_party_invite_backend(-1);
+        if (action == 1) rt.cycle_party_invite_backend(1);
+
+        action = afk_button_pair("PartyPair2", panel_min, panel_max, y, afk_lang("GC invite bots", "GC инвайт ботов"), afk_lang("GC accept", "GC принять"), false);
+        if (action == 0) rt.invite_party_placeholder();
+        if (action == 1) rt.accept_invites_placeholder();
     }
     else if (name == "Ready Check")
     {
         afk_section_caption(panel_min, panel_max, y, afk_lang("Ready check", "Ready check"));
-        action = afk_button_pair("ReadyPair1", panel_min, panel_max, y, afk_lang("Start leader", "Запуск лидер"), afk_lang("Accept all", "Принять все"));
+        action = afk_button_pair("ReadyPair1", panel_min, panel_max, y, afk_lang("Start leaders", "Запуск лидеры"), afk_lang("Accept all", "Принять все"));
         if (action == 0) rt.start_ready_check_leader();
         if (action == 1) rt.accept_ready_all();
     }
 }
+
 
 
 
@@ -235,19 +474,38 @@ void c_widgets::log_reg_page()
 		draw->text_clipped(gui->window_drawlist(), font->get(suisse_intl_medium_data, 16), gui->window_pos() + SCALE(0, elements->log_reg_page.padding.y + elements->window.padding.y + elements->log_reg_page.shadow_radius * 2 - 4), gui->window_pos() + gui->window_size(), draw->get_clr(clr->main.text), "AFKbot Loader", NULL, NULL, ImVec2(0.5f, 0.f));
 		draw->text_clipped(gui->window_drawlist(), font->get(suisse_intl_regular_data, 14), gui->window_pos() + ImVec2(0, SCALE(elements->log_reg_page.padding.y + elements->window.padding.y + elements->log_reg_page.shadow_radius * 2 + 1) + gui->text_size(font->get(suisse_intl_medium_data, 16), "AFKbot Loader").y), gui->window_pos() + gui->window_size(), draw->get_clr(clr->main.text, 0.48), "Multi-window control center.", NULL, NULL, ImVec2(0.5f, 0.f));
 		
-		gui->easing(elements->log_reg_page.window_height, var->gui.registration ? (elements->textfield.size.y * 4 + elements->window.padding.y + elements->widgets.spacing.y * 2) : (elements->textfield.size.y * 3 + elements->window.padding.y + elements->widgets.spacing.y * 1), 12.f, dynamic_easing);
+		gui->easing(elements->log_reg_page.window_height, elements->textfield.size.y * 4 + elements->window.padding.y + elements->widgets.spacing.y * 2, 12.f, dynamic_easing);
 		gui->set_pos(ImVec2((gui->window_width() - SCALE(elements->textfield.size.x)) / 2, (gui->window_height() - SCALE(elements->log_reg_page.window_height)) / 2), pos_all);
 		gui->begin_content("registration_zone", SCALE(elements->textfield.size.x, 0), SCALE(0, 0), SCALE(0, elements->window.padding.y), window_flags_no_scroll_with_mouse | window_flags_no_scrollbar);
 		{
 			gui->begin_content("fields_zone", SCALE(elements->textfield.size.x, elements->log_reg_page.window_height - (elements->textfield.size.y + elements->window.padding.y)), SCALE(0, 0), SCALE(0, elements->widgets.spacing.y), window_flags_no_scroll_with_mouse | window_flags_no_scrollbar);
 			{
-				static char username[32];
+				auto& rt = afkbot::runtime();
+				static bool login_loaded{ false };
+				static bool remember_me{ false };
+				static char username[64]{};
+				static char password[64]{};
+				if (!login_loaded)
+				{
+					remember_me = rt.remember_login;
+					if (rt.remember_login)
+					{
+						strncpy_s(username, rt.saved_username.c_str(), _TRUNCATE);
+						std::string saved_password = rt.saved_password_plain();
+						strncpy_s(password, saved_password.c_str(), _TRUNCATE);
+					}
+					login_loaded = true;
+				}
+
 				widgets->text_field("username_field", "Username", "B", username, sizeof(username));
-				static char password[32];
 				widgets->text_field("password_field", "Password", "C", password, sizeof(password));
+				widgets->checkbox_ex("remember_login_checkbox", gui->language("Remember me", "Запомнить меня", true), &remember_me);
 
 				if ((var->gui.username == username && var->gui.password == password) && var->gui.registered)
+				{
+					rt.update_saved_login(remember_me, username, password);
 					var->gui.stage_count = 1;
+				}
 			}
 			gui->end_content();
 
@@ -258,8 +516,8 @@ void c_widgets::log_reg_page()
 		gui->set_pos(ImVec2((gui->window_width() - SCALE(elements->textfield.size.x)) / 2, gui->window_height() - SCALE(elements->log_reg_page.padding.y + version_zone_height)), pos_all);
 		gui->begin_content("versions_zone", SCALE(elements->textfield.size.x, version_zone_height), SCALE(0, 0), SCALE(0, 0), window_flags_no_scroll_with_mouse | window_flags_no_scrollbar);
 		{
-			draw->text_clipped(gui->window_drawlist(), font->get(suisse_intl_semi_bold_data, 13), gui->window_pos(), gui->window_pos() + ImVec2(gui->window_width(), SCALE(20)), draw->get_clr(clr->main.text, 0.56), "AFKbot Loader V0.1", NULL, NULL, ImVec2(0.f, 0.5f));
-			draw->text_clipped(gui->window_drawlist(), font->get(suisse_intl_semi_bold_data, 13), gui->window_pos(), gui->window_pos() + ImVec2(gui->window_width(), SCALE(20)), draw->get_clr(clr->main.text, 0.16), "22.05.2026", NULL, NULL, ImVec2(1.f, 0.5f));
+			draw->text_clipped(gui->window_drawlist(), font->get(suisse_intl_semi_bold_data, 13), gui->window_pos(), gui->window_pos() + ImVec2(gui->window_width(), SCALE(20)), draw->get_clr(clr->main.text, 0.56), "AFKbot Loader V0.2.34", NULL, NULL, ImVec2(0.f, 0.5f));
+			draw->text_clipped(gui->window_drawlist(), font->get(suisse_intl_semi_bold_data, 13), gui->window_pos(), gui->window_pos() + ImVec2(gui->window_width(), SCALE(20)), draw->get_clr(clr->main.text, 0.16), "26.05.2026", NULL, NULL, ImVec2(1.f, 0.5f));
 		}
 		gui->end_content();
 	}
@@ -287,8 +545,10 @@ void c_widgets::product_page(c_video_player& player, int img_id, std::string_vie
 		ImGuiContext& g = *GImGui;
 		widgets->back_button();
 
+		const bool is_sandbox_page = (name == "Sandbox" || name == "GC Accounts" || name == "Party Builder" || name == "Ready Check");
 		const ImRect game_rect(ImVec2(g.LastItemData.Rect.Min.x, g.LastItemData.Rect.Max.y + SCALE(elements->widgets.spacing.y)), ImVec2(g.LastItemData.Rect.Min.x + gui->content_avail().x, g.LastItemData.Rect.Max.y + SCALE(elements->widgets.spacing.y + elements->product_page.game_zone_height)));
-		const ImRect desc_rect(ImVec2(game_rect.Min.x, game_rect.Max.y + SCALE(elements->product_page.back_button_padding)), gui->window_pos() + gui->window_size() - SCALE(0, elements->widgets.spacing.y * 2 + elements->info_card.height * 2));
+		const float bottom_cards_reserved = is_sandbox_page ? 0.f : SCALE(elements->widgets.spacing.y * 2 + elements->info_card.height * 2);
+		const ImRect desc_rect(ImVec2(game_rect.Min.x, game_rect.Max.y + SCALE(elements->product_page.back_button_padding)), gui->window_pos() + gui->window_size() - ImVec2(0.f, bottom_cards_reserved));
 
 		const ImVec2 module_icon_min = ImVec2(game_rect.Min.x, game_rect.GetCenter().y - SCALE(elements->product_page.img_size.y / 2));
 		const ImVec2 module_icon_max = ImVec2(game_rect.Min.x + SCALE(elements->product_page.img_size.x), game_rect.GetCenter().y + SCALE(elements->product_page.img_size.y / 2));
@@ -307,21 +567,55 @@ void c_widgets::product_page(c_video_player& player, int img_id, std::string_vie
 			desc_pos.y += gui->text_size(font->get(suisse_intl_medium_data, 13), "A").y;
 		}
 
-		gui->set_screen_pos(ImVec2(desc_rect.Min.x, desc_rect.Max.y + SCALE(elements->widgets.spacing.y)), pos_all);
-		gui->begin_group();
+		ImVec2 live_min = desc_pos + SCALE(0, 14);
+		ImVec2 live_max = desc_rect.Max;
+		if (name == "Dashboard")
 		{
-			widgets->info_card("launches_2_id", "E", gui->language("Actions", "Действия"), "12.679", (gui->window_size().x - SCALE(elements->widgets.spacing.x)) / 2);
-			gui->sameline();
-			widgets->info_card("updated_2_id", "W", gui->language("Updated", "Обновлено"), "22.05.2026", (gui->window_size().x - SCALE(elements->widgets.spacing.x)) / 2);
+			afk_render_config_hint(gui->window_drawlist(), live_min, live_max);
 		}
-		gui->end_group();
-		gui->begin_group();
+		else if (name == "Bot Accounts")
 		{
-			widgets->info_card("status_2_id", "b", gui->language("Status", "Статус"), gui->language("Ready", "Готов"), (gui->window_size().x - SCALE(elements->widgets.spacing.x)) / 2);
-			gui->sameline();
-			widgets->info_card("online_2_id", "a", gui->language("Windows", "Окна"), "146", (gui->window_size().x - SCALE(elements->widgets.spacing.x)) / 2);
+			afk_render_accounts(gui->window_drawlist(), live_min, live_max);
 		}
-		gui->end_group();
+		else if (name == "Dota Windows")
+		{
+			afk_render_windows(gui->window_drawlist(), live_min, live_max);
+		}
+		else if (name == "Sandbox")
+		{
+			afk_render_sandbox_status(gui->window_drawlist(), live_min, live_max);
+		}
+		else if (name == "GC Accounts")
+		{
+			afk_render_gc_accounts(gui->window_drawlist(), live_min, live_max);
+		}
+		else if (name == "Party Builder")
+		{
+			afk_render_parties(gui->window_drawlist(), live_min, live_max);
+		}
+		else if (name == "Ready Check")
+		{
+			afk_render_ready_status(gui->window_drawlist(), live_min, live_max);
+		}
+
+		if (!is_sandbox_page)
+		{
+			gui->set_screen_pos(ImVec2(desc_rect.Min.x, desc_rect.Max.y + SCALE(elements->widgets.spacing.y)), pos_all);
+			gui->begin_group();
+			{
+				widgets->info_card("launches_2_id", "E", gui->language("Actions", "Действия"), "12.679", (gui->window_size().x - SCALE(elements->widgets.spacing.x)) / 2);
+				gui->sameline();
+				widgets->info_card("updated_2_id", "W", gui->language("Updated", "Обновлено"), "26.05.2026", (gui->window_size().x - SCALE(elements->widgets.spacing.x)) / 2);
+			}
+			gui->end_group();
+			gui->begin_group();
+			{
+				widgets->info_card("status_2_id", "b", gui->language("Status", "Статус"), gui->language("Ready", "Готов"), (gui->window_size().x - SCALE(elements->widgets.spacing.x)) / 2);
+				gui->sameline();
+				widgets->info_card("online_2_id", "a", gui->language("Windows", "Окна"), "146", (gui->window_size().x - SCALE(elements->widgets.spacing.x)) / 2);
+			}
+			gui->end_group();
+		}
 	}
 	gui->end_content();
 	gui->sameline();
